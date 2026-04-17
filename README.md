@@ -246,7 +246,10 @@ setInterval(() => {
 
 ## Author
 
-Developed as an academic project for system design and web development.
+Luching, Seanlarenz
+Madredano, Ilczar June
+Malan, Carl Luis
+Malinao, Fred Anthony
 
 ---
 
