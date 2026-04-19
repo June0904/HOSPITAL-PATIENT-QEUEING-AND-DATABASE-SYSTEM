@@ -1,47 +1,74 @@
-#Paadd code
-# Check b boi if chakto - Fred.
-    
+package backend.model;
 
-    
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
-public class Patient {
-    private Long id;
+public class patient {
+    private String id;
     private String name;
     private int age;
     private String address;
+    private double balance;
+    private String diagnosis;
+    private String prescription;
+    private final List<String> history;
 
-    public Long getId() { return id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public patient(String id, String name, int age, String address, double balance) {
+        this.id = id;
+        this.name = name;
+        this.age = age;
+        this.address = address;
+        this.balance = balance;
+        this.diagnosis = "";
+        this.prescription = "";
+        this.history = new ArrayList<>();
+    }
 
-    public int getAge() { return age; }
-    public void setAge(int age) { this.age = age; }
+    public String getId() {
+        return id;
+    }
 
-    public String getAddress() { return address; }
-    public void setAddress(String address) { this.address = address; }
+    public String getName() {
+        return name;
+    }
 
-    public static void main(String[] args) {
+    public int getAge() {
+        return age;
+    }
 
-        Scanner sc = new Scanner(System.in);
+    public String getAddress() {
+        return address;
+    }
 
-        Patient p = new Patient();
+    public double getBalance() {
+        return balance;
+    }
 
-        System.out.print("Name: ");
-        p.setName(sc.nextLine());
+    public String getDiagnosis() {
+        return diagnosis;
+    }
 
-        System.out.print("Age: ");
-        p.setAge(sc.nextInt());
-        sc.nextLine();
+    public String getPrescription() {
+        return prescription;
+    }
 
-        System.out.print("Address: ");
-        p.setAddress(sc.nextLine());
+    public List<String> getHistory() {
+        return new ArrayList<>(history);
+    }
 
-        System.out.println("\n--- Patient Info ---");
-        System.out.println("Name: " + p.getName());
-        System.out.println("Age: " + p.getAge());
-        System.out.println("Address: " + p.getAddress());
+    public void setBalance(double balance) {
+        this.balance = balance;
+    }
 
-        sc.close();
+    public void setDiagnosis(String diagnosis) {
+        this.diagnosis = diagnosis;
+    }
+
+    public void setPrescription(String prescription) {
+        this.prescription = prescription;
+    }
+
+    public void addHistory(String note) {
+        this.history.add(note);
     }
 }
