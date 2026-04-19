@@ -1,1 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hospital Queue System</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <header>
+        <h1>Clinic Queue System</h1>
+        <p>Simple OOP-based patient queueing, consultation, transaction, and inquiry management.</p>
+        <button id="logoutButton" style="display:none; position:absolute; top:10px; right:10px;">Logout</button>
+    </header>
+
+    <main>
+        <section id="loginSection" class="card panel">
+            <h2>Login</h2>
+            <form id="loginForm">
+                <label>Username <input id="username" type="text" required /></label>
+                <label>Password <input id="password" type="password" required /></label>
+                <button type="submit">Login</button>
+            </form>
+            <div id="loginMessage" class="message"></div>
+            <p>Demo users: patient1/pass (patient), queue1/pass (queue_manager), doctor1/pass (doctor)</p>
+        </section>
+
+        <section id="patientSection" class="card panel" style="display:none;">
+            <h2>Patient Entry</h2>
+            <form id="patientForm">
+                <label>Name <input id="patientName" type="text" placeholder="Juan dela Cruz" required /></label>
+                <label>Age <input id="patientAge" type="number" min="0" placeholder="30" required /></label>
+                <label>Address <input id="patientAddress" type="text" placeholder="Makati City" required /></label>
+                <label>Service
+                    <select id="serviceType" required>
+                        <option value="consult">Consult</option>
+                        <option value="transact">Transact</option>
+                        <option value="inquiry">Inquiry</option>
+                    </select>
+                </label>
+                <label id="balanceLabel" style="display:none;">Balance (for transact only)
+                    <input id="patientBalance" type="number" min="0" value="0" />
+                </label>
+                <button type="submit">Join Queue</button>
+            </form>
+            <div id="patientMessage" class="message"></div>
+        </section>
+
+        <section id="queueSection" class="card panel admin-panel" style="display:none;">
+            <h2>Admin / Queue Manager</h2>
+            <div class="queue-row">
+                <div class="queue-card">
+                    <h3>Consult Queue</h3>
+                    <div id="consultQueue" class="queue-list"></div>
+                    <button id="resetConsult">Reset Consult Queue</button>
+                </div>
+                <div class="queue-card">
+                    <h3>Transact Queue</h3>
+                    <div id="transactQueue" class="queue-list"></div>
+                    <button id="resetTransact">Reset Transact Queue</button>
+                </div>
+                <div class="queue-card">
+                    <h3>Inquiry Queue</h3>
+                    <div id="inquiryQueue" class="queue-list"></div>
+                    <button id="resetInquiry">Reset Inquiry Queue</button>
+                </div>
+            </div>
+            <button id="resetAllQueues" class="danger">Reset All Queues</button>
+        </section>
+
+        <section id="currentCallSection" class="card panel current-service" style="display:none;">
+            <h2>Current Call</h2>
+            <div id="currentCallArea" class="current-body">
+                <p>Select a queue number to call the next patient.</p>
+            </div>
+        </section>
+
+        <section id="doctorSection" class="card panel" style="display:none;">
+            <h2>Doctor Panel</h2>
+            
+            <div class="doctor-container">
+                <div class="doctor-current-patient">
+                    <h3>Currently Serving</h3>
+                    <div id="currentPatientCard" class="patient-card">
+                        <p>No active patient. Search for a patient below.</p>
+                    </div>
+                </div>
+                
+                <div class="doctor-search">
+                    <h3>Search & Select Patient</h3>
+                    <label>Search by ID or name
+                        <input id="searchInput" type="text" placeholder="C-001 or Juan" />
+                    </label>
+                    <button id="searchButton">Search</button>
+                    <div id="searchResult" class="search-result"></div>
+                </div>
+            </div>
+            
+            <div id="updateForm" style="display:none;" class="update-form-section">
+                <h3>Update Patient Records</h3>
+                <form id="doctorUpdateForm">
+                    <label>Diagnosis <input id="updateDiagnosis" type="text" placeholder="Enter diagnosis" /></label>
+                    <label>Prescription <input id="updatePrescription" type="text" placeholder="Enter prescription" /></label>
+                    <label>Payment Amount <input id="updateBalance" type="number" step="0.01" placeholder="Enter payment amount" /></label>
+                    <button id="updateButton" type="submit">Save Update</button>
+                </form>
+            </div>
+            
+            <button id="clearDatabase" class="danger">Clear All Records</button>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
 
