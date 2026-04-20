@@ -5,14 +5,16 @@ let currentRole = null;
 const demoUsers = {
     patient1: { password: 'pass', role: 'patient' },
     queue1: { password: 'pass', role: 'queue_manager' },
-    doctor1: { password: 'pass', role: 'doctor' }
+    doctor1: { password: 'pass', role: 'doctor' },
+    cashier1: { password: 'pass', role: 'transaction' }
 };
+
+const TRANSACTION_CLEAR_FLAG = "clinic_transaction_records_cleared_2026_04_20";
 
 function login(username, password) {
     if (demoUsers[username] && demoUsers[username].password === password) {
         currentUser = username;
         currentRole = demoUsers[username].role;
-        showRoleSections();
         return true;
     }
     return false;
@@ -30,6 +32,8 @@ function showLogin() {
     document.getElementById('queueSection').style.display = 'none';
     document.getElementById('currentCallSection').style.display = 'none';
     document.getElementById('doctorSection').style.display = 'none';
+    document.getElementById('transactionSection').style.display = 'none';
+    document.getElementById('logoutButton').style.display = 'none';
 }
 
 function showRoleSections() {
@@ -42,12 +46,13 @@ function showRoleSections() {
         document.getElementById('currentCallSection').style.display = 'block';
     } else if (currentRole === 'doctor') {
         document.getElementById('doctorSection').style.display = 'block';
+    } else if (currentRole === 'transaction') {
+        document.getElementById('transactionSection').style.display = 'block';
     }
     
     // Re-bind elements and re-attach events after DOM changes
     if (window.clinicUI) {
         window.clinicUI.elements = window.clinicUI.bindElements();
-        window.clinicUI.attachEvents();
         window.clinicUI.renderAll();
     }
 }
@@ -262,15 +267,10 @@ class QueueManager {
                 prescription: details.prescription,
             });
         } else if (serviceType === "transact") {
-            const payment = Number(details.payment) || 0;
-            if (payment <= 0) {
-                throw new Error("Enter payment amount greater than zero.");
-            }
-            patient.balance = Math.max(0, Number(patient.balance) - payment);
-            patient.history.push({
-                when: new Date().toLocaleString(),
-                event: `Payment ${payment.toFixed(2)}`,
-                balance: patient.balance,
+            this.applyPayment(patient.id, details.payment, {
+                ticket: current.ticket,
+                serviceType,
+                source: "queue",
             });
         } else if (serviceType === "inquiry") {
             patient.history.push({
@@ -297,6 +297,42 @@ class QueueManager {
 
         this.active[serviceType] = null;
         this.save();
+        return this.db.getPatient(current.patientId);
+    }
+
+    applyPayment(patientId, paymentAmount, metadata = {}) {
+        const patient = this.db.getPatient(patientId);
+        if (!patient) {
+            throw new Error("Patient not found");
+        }
+
+        const payment = Number(paymentAmount) || 0;
+        if (payment <= 0) {
+            throw new Error("Enter payment amount greater than zero.");
+        }
+
+        patient.balance = Math.max(0, Number(patient.balance) - payment);
+        patient.history.push({
+            when: new Date().toLocaleString(),
+            event: `Payment ${payment.toFixed(2)}`,
+            balance: patient.balance,
+        });
+
+        this.db.updatePatient(patient.id, {
+            balance: patient.balance,
+            history: patient.history,
+        });
+
+        this.db.addHistory({
+            timestamp: new Date().toLocaleString(),
+            type: "payment",
+            patientId: patient.id,
+            patientName: patient.name,
+            payment,
+            balance: patient.balance,
+            ...metadata,
+        });
+
         return patient;
     }
 
@@ -321,7 +357,10 @@ class ClinicUI {
         this.manager = new QueueManager(this.db);
         this.elements = this.bindElements();
         this.currentPatientForUpdate = null; // Track selected patient
+        this.currentPatientForPayment = null;
         this.isCompletingConsult = false; // Track if completing a consult
+        this.eventsAttached = false;
+        this.runOneTimeTransactionClear();
         this.attachEvents();
         this.renderAll();
     }
@@ -352,16 +391,36 @@ class ClinicUI {
 
         if (document.getElementById("databaseTable")) {
             elements.databaseTable = document.getElementById("databaseTable");
+        }
+
+        if (document.getElementById("searchInput")) {
             elements.searchInput = document.getElementById("searchInput");
             elements.searchButton = document.getElementById("searchButton");
             elements.searchResult = document.getElementById("searchResult");
             elements.clearDatabase = document.getElementById("clearDatabase");
         }
 
+        if (document.getElementById("transactionSearchInput")) {
+            elements.transactionSearchInput = document.getElementById("transactionSearchInput");
+            elements.transactionSearchButton = document.getElementById("transactionSearchButton");
+            elements.transactionSearchResult = document.getElementById("transactionSearchResult");
+            elements.transactionCurrentPatientCard = document.getElementById("transactionCurrentPatientCard");
+            elements.transactionPaymentForm = document.getElementById("transactionPaymentForm");
+            elements.transactionPatientId = document.getElementById("transactionPatientId");
+            elements.transactionPaymentAmount = document.getElementById("transactionPaymentAmount");
+            elements.transactionUpdateForm = document.getElementById("transactionUpdateForm");
+            elements.transactionMessage = document.getElementById("transactionMessage");
+        }
+
         return elements;
     }
 
     attachEvents() {
+        if (this.eventsAttached) {
+            return;
+        }
+        this.eventsAttached = true;
+
         // Login
         document.getElementById('loginForm').addEventListener('submit', (event) => {
             event.preventDefault();
@@ -415,6 +474,23 @@ class ClinicUI {
             doctorUpdateForm.addEventListener('submit', (event) => {
                 event.preventDefault();
                 this.handleDoctorUpdate();
+            });
+        }
+
+        if (this.elements.transactionSearchButton) {
+            this.elements.transactionSearchButton.addEventListener("click", () => this.handleTransactionSearch());
+            this.elements.transactionSearchInput.addEventListener("keypress", (event) => {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    this.handleTransactionSearch();
+                }
+            });
+        }
+
+        if (this.elements.transactionUpdateForm) {
+            this.elements.transactionUpdateForm.addEventListener("submit", (event) => {
+                event.preventDefault();
+                this.handleTransactionPayment();
             });
         }
     }
@@ -514,7 +590,7 @@ class ClinicUI {
         const currentPatientCard = document.getElementById('currentPatientCard');
         if (currentPatientCard) {
             currentPatientCard.innerHTML = `
-                <div style="padding: 10px; background: #f0f0f0; border-radius: 5px;">
+                <div class="patient-summary-card">
                     <strong>${patient.name}</strong> (${patient.id})<br/>
                     Age: ${patient.age}, Address: ${patient.address}<br/>
                     Current Diagnosis: ${patient.diagnosis || '—'}<br/>
@@ -525,7 +601,7 @@ class ClinicUI {
         
         // Highlight selected result
         this.elements.searchResult.querySelectorAll('.search-result-item').forEach(item => {
-            item.style.background = item.dataset.patientId === patientId ? '#d1f2eb' : 'transparent';
+            item.classList.toggle('active', item.dataset.patientId === patientId);
         });
     }
 
@@ -539,7 +615,7 @@ class ClinicUI {
             const patient = this.db.getPatient(consultActive.patientId);
             if (patient) {
                 currentPatientCard.innerHTML = `
-                    <div style="padding: 10px; background: #d1f2eb; border-radius: 5px; margin-bottom: 10px;">
+                    <div class="patient-summary-card patient-summary-card--active">
                         <strong>CONSULT - ${consultActive.ticket}</strong><br/>
                         <strong>${patient.name}</strong> (${patient.id})<br/>
                         Age: ${patient.age}, Address: ${patient.address}<br/>
@@ -547,7 +623,7 @@ class ClinicUI {
                         Current Prescription: ${patient.prescription || '—'}<br/>
                         Current Balance: ₱${Number(patient.balance).toFixed(2)}
                     </div>
-                    <button id="completeConsultBtn" style="width: 100%; background: #1f618d;">Complete Consultation</button>`;
+                    <button id="completeConsultBtn" class="full-width-button">Complete Consultation</button>`;
                 
                 // Attach event to complete consult button
                 document.getElementById('completeConsultBtn').addEventListener('click', () => {
@@ -604,6 +680,82 @@ class ClinicUI {
         }
     }
 
+    handleTransactionSearch() {
+        const query = this.elements.transactionSearchInput.value.trim();
+        if (!query) {
+            this.showTransactionMessage("Enter a patient ID or name to search.", true);
+            return;
+        }
+
+        const results = this.db.search(query);
+        if (results.length === 0) {
+            this.elements.transactionSearchResult.innerHTML = `<p>No patient records found for "${query}".</p>`;
+            this.elements.transactionPaymentForm.style.display = "none";
+            return;
+        }
+
+        this.elements.transactionSearchResult.innerHTML = results
+            .map((patient) => `
+                <div class="search-result-item clickable" data-patient-id="${patient.id}">
+                    <strong>${patient.name}</strong> (${patient.id})<br/>
+                    Age: ${patient.age}, Address: ${patient.address}<br/>
+                    Remaining Balance: ₱${Number(patient.balance).toFixed(2)}
+                </div>`)
+            .join("");
+
+        this.elements.transactionSearchResult.querySelectorAll(".search-result-item").forEach((item) => {
+            item.addEventListener("click", () => {
+                this.selectPatientForPayment(item.dataset.patientId);
+            });
+        });
+    }
+
+    selectPatientForPayment(patientId) {
+        const patient = this.db.getPatient(patientId);
+        if (!patient) {
+            return;
+        }
+
+        this.currentPatientForPayment = patientId;
+        this.elements.transactionPatientId.value = patient.id;
+        this.elements.transactionPaymentAmount.value = "";
+        this.elements.transactionPaymentForm.style.display = "block";
+
+        this.elements.transactionSearchResult.querySelectorAll(".search-result-item").forEach((item) => {
+            item.classList.toggle("active", item.dataset.patientId === patientId);
+        });
+
+        this.renderTransactionPatientCard(patient);
+    }
+
+    handleTransactionPayment() {
+        if (!this.currentPatientForPayment) {
+            this.showTransactionMessage("Select a patient before applying payment.", true);
+            return;
+        }
+
+        try {
+            const payment = Number(this.elements.transactionPaymentAmount.value);
+            const activeTransaction = this.manager.active.transact;
+            const isCurrentQueuePatient =
+                activeTransaction && activeTransaction.patientId === this.currentPatientForPayment;
+
+            const patient = isCurrentQueuePatient
+                ? this.manager.completeActive("transact", { payment })
+                : this.manager.applyPayment(this.currentPatientForPayment, payment, {
+                    source: "cashier",
+                    serviceType: "transact",
+                });
+
+            this.showTransactionMessage(`Payment recorded for ${patient.name}. Remaining balance: ₱${Number(patient.balance).toFixed(2)}.`);
+            this.elements.transactionPaymentAmount.value = "";
+            this.renderAll();
+            this.selectPatientForPayment(patient.id);
+        } catch (error) {
+            this.showTransactionMessage(error.message, true);
+        }
+    }
+
     handleClearDatabase() {
         if (!confirm("Clear all saved patient records? This cannot be undone.")) {
             return;
@@ -614,11 +766,51 @@ class ClinicUI {
         this.renderAll();
     }
 
+    runOneTimeTransactionClear() {
+        try {
+            if (localStorage.getItem(TRANSACTION_CLEAR_FLAG)) {
+                return;
+            }
+
+            this.clearTransactionData();
+            localStorage.setItem(TRANSACTION_CLEAR_FLAG, "true");
+        } catch (error) {
+            console.error("Failed to clear transaction data", error);
+        }
+    }
+
+    clearTransactionData() {
+        Object.values(this.db.patients).forEach((patient) => {
+            patient.balance = 0;
+            patient.history = (patient.history || []).filter((entry) => {
+                return !String(entry.event || "").startsWith("Payment ");
+            });
+        });
+
+        this.db.history = (this.db.history || []).filter((entry) => {
+            return entry.type !== "payment" && entry.serviceType !== "transact";
+        });
+        this.db.save();
+
+        this.manager.queues.transact = [];
+        this.manager.active.transact = null;
+        this.manager.ticketCount.transact = 0;
+        this.manager.save();
+    }
+
     showMessage(text, isError = false) {
         if (this.elements.patientMessage) {
             this.elements.patientMessage.textContent = text;
             this.elements.patientMessage.style.background = isError ? "#f8d7da" : "#d1f2eb";
             this.elements.patientMessage.style.color = isError ? "#7a1f1f" : "#0b5345";
+        }
+    }
+
+    showTransactionMessage(text, isError = false) {
+        if (this.elements.transactionMessage) {
+            this.elements.transactionMessage.textContent = text;
+            this.elements.transactionMessage.style.background = isError ? "#f8d7da" : "#d1f2eb";
+            this.elements.transactionMessage.style.color = isError ? "#7a1f1f" : "#0b5345";
         }
     }
 
@@ -678,7 +870,7 @@ class ClinicUI {
                     <p><strong>Patient:</strong> ${name}</p>
                     <p><strong>Service:</strong> ${serviceType}</p>
                     ${serviceType === 'consult' ? 
-                        '<p style="color: #1f618d; font-weight: bold;">Patient sent to doctor for consultation.</p>' :
+                        '<p class="consult-status-note">Patient sent to doctor for consultation.</p>' :
                         this.renderServiceForm(serviceType, item.patientId)}
                 </div>`;
             })
@@ -688,6 +880,57 @@ class ClinicUI {
         
         // Update doctor's panel with currently called consult patient
         this.updateDoctorCurrentPatient();
+    }
+
+    renderTransactionPatientCard(patient) {
+        if (!this.elements.transactionCurrentPatientCard) {
+            return;
+        }
+
+        this.elements.transactionCurrentPatientCard.innerHTML = `
+            <div class="patient-summary-card">
+                <strong>${patient.name}</strong> (${patient.id})<br/>
+                Age: ${patient.age}, Address: ${patient.address}<br/>
+                Current Balance: ₱${Number(patient.balance).toFixed(2)}<br/>
+                Diagnosis: ${patient.diagnosis || "—"}<br/>
+                Prescription: ${patient.prescription || "—"}
+            </div>`;
+    }
+
+    updateTransactionCurrentPatient() {
+        if (!this.elements.transactionCurrentPatientCard) {
+            return;
+        }
+
+        const activeTransaction = this.manager.active.transact;
+        if (!activeTransaction) {
+            this.elements.transactionCurrentPatientCard.innerHTML =
+                "<p>No active transaction patient. Search for a patient or wait for the next called transaction.</p>";
+            return;
+        }
+
+        const patient = this.db.getPatient(activeTransaction.patientId);
+        if (!patient) {
+            this.elements.transactionCurrentPatientCard.innerHTML = "<p>Active transaction patient record not found.</p>";
+            return;
+        }
+
+        this.currentPatientForPayment = patient.id;
+        if (this.elements.transactionPatientId) {
+            this.elements.transactionPatientId.value = patient.id;
+        }
+        if (this.elements.transactionPaymentForm) {
+            this.elements.transactionPaymentForm.style.display = "block";
+        }
+
+        this.elements.transactionCurrentPatientCard.innerHTML = `
+            <div class="patient-summary-card patient-summary-card--active">
+                <strong>TRANSACTION - ${activeTransaction.ticket}</strong><br/>
+                <strong>${patient.name}</strong> (${patient.id})<br/>
+                Age: ${patient.age}, Address: ${patient.address}<br/>
+                Current Balance: ₱${Number(patient.balance).toFixed(2)}<br/>
+                Ready for cashier payment processing.
+            </div>`;
     }
 
     renderServiceForm(serviceType, patientId) {
@@ -815,6 +1058,8 @@ class ClinicUI {
             this.renderDatabaseTable();
             this.elements.searchResult.innerHTML = "";
             this.updateDoctorCurrentPatient();
+        } else if (currentRole === 'transaction') {
+            this.updateTransactionCurrentPatient();
         }
         // Patients don't need to render anything special after joining
     }
@@ -823,4 +1068,3 @@ class ClinicUI {
 window.addEventListener("DOMContentLoaded", () => {
     window.clinicUI = new ClinicUI();
 });
-
